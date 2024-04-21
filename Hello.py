@@ -1,51 +1,70 @@
-# Copyright (c) Streamlit Inc. (2018-2022) Snowflake Inc. (2022)
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+import json
+import pandas as pd
+import plotly.graph_objects as go
 
-import streamlit as st
-from streamlit.logger import get_logger
+# Load the data
+with open('search.json', 'r') as file:
+    data = json.load(file)
 
-LOGGER = get_logger(__name__)
+# Extracting data
+issues = data['issues']
+sankey_data = {
+    'Source': [],
+    'Target': [],
+    'Value': [],
+    'Hovertext': []  # Adding hover text data
+}
 
+for issue in issues:
+    project = issue['fields']['project']['name']
+    issue_type = issue['fields']['issuetype']['name']
+    status = issue['fields']['status']['name']
+    priority_id = int(issue['fields'].get('priority', {}).get('id', 0))
+    summary = issue['fields'].get('summary', 'No summary available')  # Extracting summary for hover
 
-def run():
-    st.set_page_config(
-        page_title="Hello",
-        page_icon="👋",
+    # Link project to issue type
+    sankey_data['Source'].append(project)
+    sankey_data['Target'].append(issue_type)
+    sankey_data['Value'].append(priority_id)
+    sankey_data['Hovertext'].append(f"Summary: {summary}")
+
+    # Link issue type to status
+    sankey_data['Source'].append(issue_type)
+    sankey_data['Target'].append(status)
+    sankey_data['Value'].append(priority_id)
+    sankey_data['Hovertext'].append(f"Summary: {summary}")
+
+# Creating DataFrame
+df_sankey = pd.DataFrame(sankey_data)
+
+# Create source-target mapping for nodes
+label_list = pd.concat([df_sankey['Source'], df_sankey['Target']]).unique()
+label_dict = {label: idx for idx, label in enumerate(label_list)}
+
+# Map text labels to integers
+df_sankey['Source'] = df_sankey['Source'].map(label_dict)
+df_sankey['Target'] = df_sankey['Target'].map(label_dict)
+
+# Create the Sankey diagram with hover information
+fig = go.Figure(data=[go.Sankey(
+    node=dict(
+        pad=15,
+        thickness=20,
+        line=dict(color='black', width=0.5),
+        label=label_list,
+        color='blue',
+        customdata=[f"{label}" for label in label_list],  # Using label for demo
+        hovertemplate='Node: %{label}<br>%{customdata}<extra></extra>'  # Custom hover template for nodes
+    ),
+    link=dict(
+        source=df_sankey['Source'],
+        target=df_sankey['Target'],
+        value=df_sankey['Value'],
+        customdata=df_sankey['Hovertext'],  # Detailed hovertext for links
+        color='rgba(0, 0, 255, 0.5)',
+        hovertemplate='Source: %{source.label}<br>Target: %{target.label}<br>Priority Score: %{value}<br>%{customdata}<extra></extra>'  # Custom hover template for links
     )
+)])
 
-    st.write("# Welcome to Streamlit! 👋")
-
-    st.sidebar.success("Select a demo above.")
-
-    st.markdown(
-        """
-        Streamlit is an open-source app framework built specifically for
-        Machine Learning and Data Science projects.
-        **👈 Select a demo from the sidebar** to see some examples
-        of what Streamlit can do!
-        ### Want to learn more?
-        - Check out [streamlit.io](https://streamlit.io)
-        - Jump into our [documentation](https://docs.streamlit.io)
-        - Ask a question in our [community
-          forums](https://discuss.streamlit.io)
-        ### See more complex demos
-        - Use a neural net to [analyze the Udacity Self-driving Car Image
-          Dataset](https://github.com/streamlit/demo-self-driving)
-        - Explore a [New York City rideshare dataset](https://github.com/streamlit/demo-uber-nyc-pickups)
-    """
-    )
-
-
-if __name__ == "__main__":
-    run()
+fig.update_layout(title_text="JIRA Issue Flow Sankey Diagram", font_size=10)
+fig.show()
